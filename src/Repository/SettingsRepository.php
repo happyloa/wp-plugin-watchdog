@@ -10,7 +10,7 @@ class SettingsRepository
     {
         $defaults = [
             'email_enabled'        => true,
-            'email_recipients'     => get_option('admin_email'),
+            'email_recipients'     => '',
             'discord_enabled'      => false,
             'discord_webhook'      => '',
             'webhook_enabled'      => false,
