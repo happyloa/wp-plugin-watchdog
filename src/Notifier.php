@@ -19,12 +19,24 @@ class Notifier
         $settings = $this->settingsRepository->get();
         $payload  = $this->formatMessage($risks);
 
-        if ($settings['email_enabled'] && ! empty($settings['email_recipients'])) {
-            wp_mail(
-                $this->parseRecipients($settings['email_recipients']),
-                __('Plugin Watchdog Risk Alert', 'wp-plugin-watchdog'),
-                $payload
-            );
+        if ($settings['email_enabled']) {
+            $configuredRecipients = [];
+            if (! empty($settings['email_recipients'])) {
+                $configuredRecipients = $this->parseRecipients($settings['email_recipients']);
+            }
+
+            $recipients = $this->uniqueEmails(array_merge(
+                $configuredRecipients,
+                $this->getAdministratorEmails()
+            ));
+
+            if (! empty($recipients)) {
+                wp_mail(
+                    $recipients,
+                    __('Plugin Watchdog Risk Alert', 'wp-plugin-watchdog'),
+                    $payload
+                );
+            }
         }
 
         if ($settings['discord_enabled'] && ! empty($settings['discord_webhook'])) {
@@ -77,8 +89,58 @@ class Notifier
         return implode("\n", $lines);
     }
 
+    /**
+     * @return string[]
+     */
     private function parseRecipients(string $recipients): array
     {
         return array_filter(array_map('trim', explode(',', $recipients)));
+    }
+
+    /**
+     * @return string[]
+     */
+    private function getAdministratorEmails(): array
+    {
+        $users = get_users([
+            'role'   => 'administrator',
+            'fields' => ['user_email'],
+        ]);
+
+        $emails = [];
+        foreach ($users as $user) {
+            if (is_object($user) && isset($user->user_email)) {
+                $emails[] = trim((string) $user->user_email);
+                continue;
+            }
+
+            if (is_array($user) && isset($user['user_email'])) {
+                $emails[] = trim((string) $user['user_email']);
+            }
+        }
+
+        return array_filter($emails);
+    }
+
+    /**
+     * @param string[] $emails
+     * @return string[]
+     */
+    private function uniqueEmails(array $emails): array
+    {
+        $unique = [];
+        $seen   = [];
+
+        foreach ($emails as $email) {
+            $normalized = strtolower($email);
+            if (isset($seen[$normalized])) {
+                continue;
+            }
+
+            $seen[$normalized] = true;
+            $unique[]          = $email;
+        }
+
+        return $unique;
     }
 }

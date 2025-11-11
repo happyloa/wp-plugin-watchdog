@@ -1,0 +1,99 @@
+<?php
+
+use Brain\Monkey\Functions;
+use Watchdog\Models\Risk;
+use Watchdog\Notifier;
+use Watchdog\Repository\SettingsRepository;
+
+class NotifierTest extends TestCase
+{
+    public function testAdministratorsAreIncludedWhenNoCustomRecipientsAreConfigured(): void
+    {
+        $settings = [
+            'email_enabled'    => true,
+            'email_recipients' => '',
+            'discord_enabled'  => false,
+            'discord_webhook'  => '',
+            'webhook_enabled'  => false,
+            'webhook_url'      => '',
+        ];
+
+        $repository = $this->createMock(SettingsRepository::class);
+        $repository->method('get')->willReturn($settings);
+
+        Functions\expect('get_users')
+            ->once()
+            ->with([
+                'role'   => 'administrator',
+                'fields' => ['user_email'],
+            ])
+            ->andReturn([
+                (object) ['user_email' => 'admin@example.com'],
+                ['user_email' => 'second@example.com'],
+            ]);
+
+        Functions\when('__')->alias(static fn ($text) => $text);
+
+        Functions\expect('wp_mail')
+            ->once()
+            ->withArgs(function ($recipients, $subject, $body) {
+                self::assertSame(['admin@example.com', 'second@example.com'], $recipients);
+                self::assertSame('Plugin Watchdog Risk Alert', $subject);
+                self::assertIsString($body);
+
+                return true;
+            });
+
+        $notifier = new Notifier($repository);
+        $notifier->notify([
+            new Risk('plugin-slug', 'Plugin Name', '1.0.0', null, ['Example reason']),
+        ]);
+    }
+
+    public function testConfiguredRecipientsAreMergedAndDeduplicatedWithAdministrators(): void
+    {
+        $settings = [
+            'email_enabled'    => true,
+            'email_recipients' => 'Admin@example.com, custom@example.com',
+            'discord_enabled'  => false,
+            'discord_webhook'  => '',
+            'webhook_enabled'  => false,
+            'webhook_url'      => '',
+        ];
+
+        $repository = $this->createMock(SettingsRepository::class);
+        $repository->method('get')->willReturn($settings);
+
+        Functions\expect('get_users')
+            ->once()
+            ->with([
+                'role'   => 'administrator',
+                'fields' => ['user_email'],
+            ])
+            ->andReturn([
+                ['user_email' => 'admin@example.com'],
+                ['user_email' => 'other@example.com'],
+            ]);
+
+        Functions\when('__')->alias(static fn ($text) => $text);
+
+        Functions\expect('wp_mail')
+            ->once()
+            ->withArgs(function ($recipients, $subject, $body) {
+                self::assertSame([
+                    'Admin@example.com',
+                    'custom@example.com',
+                    'other@example.com',
+                ], $recipients);
+                self::assertSame('Plugin Watchdog Risk Alert', $subject);
+                self::assertIsString($body);
+
+                return true;
+            });
+
+        $notifier = new Notifier($repository);
+        $notifier->notify([
+            new Risk('plugin-slug', 'Plugin Name', '1.0.0', null, ['Example reason']),
+        ]);
+    }
+}
