@@ -35,7 +35,11 @@ class NotifierTest extends TestCase
         Functions\when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
         Functions\when('esc_url')->alias(static fn ($url) => $url);
         Functions\when('esc_html')->alias(static fn ($text) => $text);
+        Functions\when('esc_attr')->alias(static fn ($text) => $text);
         Functions\when('__')->alias(static fn ($text) => $text);
+        Functions\when('esc_html__')->alias(static fn ($text) => $text);
+        Functions\when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
+        Functions\when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
 
         Functions\expect('wp_mail')
             ->once()
@@ -84,13 +88,17 @@ class NotifierTest extends TestCase
         Functions\when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
         Functions\when('esc_url')->alias(static fn ($url) => $url);
         Functions\when('esc_html')->alias(static fn ($text) => $text);
+        Functions\when('esc_attr')->alias(static fn ($text) => $text);
         Functions\when('__')->alias(static fn ($text) => $text);
+        Functions\when('esc_html__')->alias(static fn ($text) => $text);
+        Functions\when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
+        Functions\when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
 
         Functions\expect('wp_mail')
             ->once()
             ->withArgs(function ($recipients, $subject, $body, $headers) {
                 self::assertSame([
-                    'Admin@example.com',
+                    'admin@example.com',
                     'custom@example.com',
                     'other@example.com',
                 ], $recipients);

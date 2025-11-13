@@ -156,31 +156,44 @@ class Notifier
             );
         }
 
+        $containerStyle = 'font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", ';
+        $containerStyle .= 'Roboto, sans-serif; color:#1d2327;';
+        $tableStyle = 'border-collapse:collapse; width:100%; max-width:640px; background:#ffffff; ';
+        $tableStyle .= 'border:1px solid #dcdcde;';
+        $linkStyle = 'color:#2271b1;';
+        $introText = esc_html__(
+            'These plugins are flagged for security or maintenance updates.'
+            . ' Review the details below and update as soon as possible.',
+            'wp-plugin-watchdog'
+        );
         $updateUrl = esc_url(admin_url('update-core.php'));
 
         return sprintf(
-            '<div style="font-family:-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, sans-serif; color:#1d2327;">
-                <h2 style="font-size:20px; font-weight:600;">%1$s</h2>
-                <p style="font-size:14px; line-height:1.6;">%2$s</p>
-                <table style="border-collapse:collapse; width:100%%; max-width:640px; background:#ffffff; border:1px solid #dcdcde;">
+            '<div style="%1$s">
+                <h2 style="font-size:20px; font-weight:600;">%2$s</h2>
+                <p style="font-size:14px; line-height:1.6;">%3$s</p>
+                <table style="%4$s">
                     <thead>
                         <tr style="background:#f6f7f7; text-align:left; color:#1d2327;">
-                            <th style="padding:12px 16px; border-bottom:1px solid #dcdcde;">%3$s</th>
-                            <th style="padding:12px 16px; border-bottom:1px solid #dcdcde;">%4$s</th>
                             <th style="padding:12px 16px; border-bottom:1px solid #dcdcde;">%5$s</th>
+                            <th style="padding:12px 16px; border-bottom:1px solid #dcdcde;">%6$s</th>
+                            <th style="padding:12px 16px; border-bottom:1px solid #dcdcde;">%7$s</th>
                         </tr>
                     </thead>
-                    <tbody>%6$s</tbody>
+                    <tbody>%8$s</tbody>
                 </table>
-                <p style="font-size:14px; line-height:1.6;">%7$s <a style="color:#2271b1;" href="%8$s">%8$s</a></p>
+                <p style="font-size:14px; line-height:1.6;">%9$s <a style="%10$s" href="%11$s">%11$s</a></p>
             </div>',
-            esc_html(__('Plugin updates required on your site', 'wp-plugin-watchdog')),
-            esc_html(__('These plugins are flagged for security or maintenance updates. Review the details below and update as soon as possible.', 'wp-plugin-watchdog')),
-            esc_html(__('Plugin', 'wp-plugin-watchdog')),
-            esc_html(__('Current Version', 'wp-plugin-watchdog')),
-            esc_html(__('Available Version', 'wp-plugin-watchdog')),
+            esc_attr($containerStyle),
+            esc_html__('Plugin updates required on your site', 'wp-plugin-watchdog'),
+            $introText,
+            esc_attr($tableStyle),
+            esc_html__('Plugin', 'wp-plugin-watchdog'),
+            esc_html__('Current Version', 'wp-plugin-watchdog'),
+            esc_html__('Available Version', 'wp-plugin-watchdog'),
             $rows,
-            esc_html(__('Update plugins here:', 'wp-plugin-watchdog')),
+            esc_html__('Update plugins here:', 'wp-plugin-watchdog'),
+            esc_attr($linkStyle),
             $updateUrl
         );
     }
@@ -215,7 +228,17 @@ class Notifier
             }
         }
 
-        return array_filter($emails);
+        $sanitized = [];
+        foreach (array_filter($emails) as $email) {
+            $clean = sanitize_email($email);
+            if ($clean === '' || ! is_email($clean)) {
+                continue;
+            }
+
+            $sanitized[] = $clean;
+        }
+
+        return $sanitized;
     }
 
     /**
@@ -228,13 +251,18 @@ class Notifier
         $seen   = [];
 
         foreach ($emails as $email) {
-            $normalized = strtolower($email);
+            $sanitized = sanitize_email($email);
+            if ($sanitized === '' || ! is_email($sanitized)) {
+                continue;
+            }
+
+            $normalized = strtolower($sanitized);
             if (isset($seen[$normalized])) {
                 continue;
             }
 
             $seen[$normalized] = true;
-            $unique[]          = $email;
+            $unique[]          = $sanitized;
         }
 
         return $unique;
