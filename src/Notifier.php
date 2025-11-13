@@ -56,19 +56,65 @@ class Notifier
             $this->dispatchWebhook($webhookSettings['url'], [
                 'message' => $plainTextReport,
                 'risks'   => array_map(static fn (Risk $risk): array => $risk->toArray(), $risks),
-            ]);
+            ], $webhookSettings['secret'] ?? null);
         }
     }
 
-    private function dispatchWebhook(string $url, array $body): void
+    private function dispatchWebhook(string $url, array $body, ?string $secret = null): void
     {
-        wp_remote_post($url, [
-            'headers' => [
-                'Content-Type' => 'application/json',
-            ],
-            'body'    => wp_json_encode($body),
+        $payload = wp_json_encode($body);
+        if (! is_string($payload)) {
+            $payload = '';
+        }
+        $headers = [
+            'Content-Type' => 'application/json',
+        ];
+
+        if ($secret !== null && $secret !== '') {
+            $headers['X-Watchdog-Signature'] = 'sha256=' . hash_hmac('sha256', $payload, $secret);
+        }
+
+        $response = wp_remote_post($url, [
+            'headers' => $headers,
+            'body'    => $payload,
             'timeout' => 10,
         ]);
+
+        $expiration = defined('DAY_IN_SECONDS') ? DAY_IN_SECONDS : 86400;
+
+        if (is_wp_error($response)) {
+            $message = sprintf(
+                'WP Plugin Watchdog webhook request to %s failed: %s',
+                $url,
+                $response->get_error_message()
+            );
+
+            error_log($message);
+            set_transient('wp_watchdog_webhook_error', $message, $expiration);
+
+            return;
+        }
+
+        $statusCode = wp_remote_retrieve_response_code($response);
+        if ($statusCode < 200 || $statusCode >= 300) {
+            $bodyMessage = trim((string) wp_remote_retrieve_body($response));
+            $message     = sprintf(
+                'WP Plugin Watchdog webhook request to %s failed with status %d',
+                $url,
+                $statusCode
+            );
+
+            if ($bodyMessage !== '') {
+                $message .= ': ' . $bodyMessage;
+            }
+
+            error_log($message);
+            set_transient('wp_watchdog_webhook_error', $message, $expiration);
+
+            return;
+        }
+
+        delete_transient('wp_watchdog_webhook_error');
     }
 
     /**

@@ -1,6 +1,7 @@
 <?php
 
-use Brain\Monkey\Functions;
+use function Brain\Monkey\Functions\expect;
+use function Brain\Monkey\Functions\when;
 use Watchdog\Models\Risk;
 use Watchdog\Notifier;
 use Watchdog\Repository\SettingsRepository;
@@ -31,7 +32,7 @@ class NotifierTest extends TestCase
         $repository = $this->createMock(SettingsRepository::class);
         $repository->method('get')->willReturn($settings);
 
-        Functions\expect('get_users')
+        expect('get_users')
             ->once()
             ->with([
                 'role'   => 'administrator',
@@ -42,16 +43,16 @@ class NotifierTest extends TestCase
                 ['user_email' => 'second@example.com'],
             ]);
 
-        Functions\when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
-        Functions\when('esc_url')->alias(static fn ($url) => $url);
-        Functions\when('esc_html')->alias(static fn ($text) => $text);
-        Functions\when('esc_attr')->alias(static fn ($text) => $text);
-        Functions\when('__')->alias(static fn ($text) => $text);
-        Functions\when('esc_html__')->alias(static fn ($text) => $text);
-        Functions\when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
-        Functions\when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
+        when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
+        when('esc_url')->alias(static fn ($url) => $url);
+        when('esc_html')->alias(static fn ($text) => $text);
+        when('esc_attr')->alias(static fn ($text) => $text);
+        when('__')->alias(static fn ($text) => $text);
+        when('esc_html__')->alias(static fn ($text) => $text);
+        when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
+        when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
 
-        Functions\expect('wp_mail')
+        expect('wp_mail')
             ->once()
             ->withArgs(function ($recipients, $subject, $body, $headers) {
                 self::assertSame(['admin@example.com', 'second@example.com'], $recipients);
@@ -94,7 +95,7 @@ class NotifierTest extends TestCase
         $repository = $this->createMock(SettingsRepository::class);
         $repository->method('get')->willReturn($settings);
 
-        Functions\expect('get_users')
+        expect('get_users')
             ->once()
             ->with([
                 'role'   => 'administrator',
@@ -105,16 +106,16 @@ class NotifierTest extends TestCase
                 ['user_email' => 'other@example.com'],
             ]);
 
-        Functions\when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
-        Functions\when('esc_url')->alias(static fn ($url) => $url);
-        Functions\when('esc_html')->alias(static fn ($text) => $text);
-        Functions\when('esc_attr')->alias(static fn ($text) => $text);
-        Functions\when('__')->alias(static fn ($text) => $text);
-        Functions\when('esc_html__')->alias(static fn ($text) => $text);
-        Functions\when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
-        Functions\when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
+        when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
+        when('esc_url')->alias(static fn ($url) => $url);
+        when('esc_html')->alias(static fn ($text) => $text);
+        when('esc_attr')->alias(static fn ($text) => $text);
+        when('__')->alias(static fn ($text) => $text);
+        when('esc_html__')->alias(static fn ($text) => $text);
+        when('sanitize_email')->alias(static fn ($email) => strtolower(trim((string) $email)));
+        when('is_email')->alias(static fn ($email) => $email !== '' && str_contains($email, '@'));
 
-        Functions\expect('wp_mail')
+        expect('wp_mail')
             ->once()
             ->withArgs(function ($recipients, $subject, $body, $headers) {
                 self::assertSame([
@@ -129,6 +130,192 @@ class NotifierTest extends TestCase
 
                 return true;
             });
+
+        $notifier = new Notifier($repository);
+        $notifier->notify([
+            new Risk('plugin-slug', 'Plugin Name', '1.0.0', null, ['Example reason']),
+        ]);
+    }
+
+    public function testWebhookSecretAddsSignatureAndClearsErrorsOnSuccess(): void
+    {
+        $settings = [
+            'notifications' => [
+                'frequency' => 'daily',
+                'email'     => [
+                    'enabled'    => false,
+                    'recipients' => '',
+                ],
+                'discord'   => [
+                    'enabled' => false,
+                    'webhook' => '',
+                ],
+                'webhook'   => [
+                    'enabled' => true,
+                    'url'     => 'https://example.com/hook',
+                    'secret'  => 'super-secret',
+                ],
+                'wpscan_api_key' => '',
+            ],
+        ];
+
+        $repository = $this->createMock(SettingsRepository::class);
+        $repository->method('get')->willReturn($settings);
+
+        when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
+        when('esc_url')->alias(static fn ($url) => $url);
+        when('esc_html')->alias(static fn ($text) => $text);
+        when('esc_attr')->alias(static fn ($text) => $text);
+        when('__')->alias(static fn ($text) => $text);
+        when('esc_html__')->alias(static fn ($text) => $text);
+        when('wp_json_encode')->alias(static fn ($data) => json_encode($data, JSON_THROW_ON_ERROR));
+        when('is_wp_error')->alias(static fn () => false);
+        when('wp_remote_retrieve_response_code')->alias(static fn ($response) => $response['response']['code'] ?? 0);
+        when('wp_remote_retrieve_body')->alias(static fn () => '');
+
+        expect('wp_remote_post')
+            ->once()
+            ->withArgs(function ($url, $args) {
+                self::assertSame('https://example.com/hook', $url);
+                self::assertArrayHasKey('headers', $args);
+                self::assertArrayHasKey('body', $args);
+                self::assertSame('application/json', $args['headers']['Content-Type']);
+                self::assertArrayHasKey('X-Watchdog-Signature', $args['headers']);
+
+                $expectedSignature = 'sha256=' . hash_hmac('sha256', $args['body'], 'super-secret');
+                self::assertSame($expectedSignature, $args['headers']['X-Watchdog-Signature']);
+
+                return true;
+            })
+            ->andReturn([
+                'response' => ['code' => 204],
+                'body'     => '',
+            ]);
+
+        expect('delete_transient')
+            ->once()
+            ->with('wp_watchdog_webhook_error');
+
+        expect('set_transient')->never();
+
+        $notifier = new Notifier($repository);
+        $notifier->notify([
+            new Risk('plugin-slug', 'Plugin Name', '1.0.0', null, ['Example reason']),
+        ]);
+    }
+
+    public function testWebhookDispatchLogsWpError(): void
+    {
+        $settings = [
+            'notifications' => [
+                'frequency' => 'daily',
+                'email'     => [
+                    'enabled'    => false,
+                    'recipients' => '',
+                ],
+                'discord'   => [
+                    'enabled' => false,
+                    'webhook' => '',
+                ],
+                'webhook'   => [
+                    'enabled' => true,
+                    'url'     => 'https://example.com/hook',
+                    'secret'  => '',
+                ],
+                'wpscan_api_key' => '',
+            ],
+        ];
+
+        $repository = $this->createMock(SettingsRepository::class);
+        $repository->method('get')->willReturn($settings);
+
+        when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
+        when('esc_url')->alias(static fn ($url) => $url);
+        when('esc_html')->alias(static fn ($text) => $text);
+        when('esc_attr')->alias(static fn ($text) => $text);
+        when('__')->alias(static fn ($text) => $text);
+        when('esc_html__')->alias(static fn ($text) => $text);
+        when('wp_json_encode')->alias(static fn ($data) => json_encode($data, JSON_THROW_ON_ERROR));
+
+        $error = new class('Something went wrong') {
+            public function __construct(private string $message)
+            {
+            }
+
+            public function get_error_message(): string
+            {
+                return $this->message;
+            }
+        };
+
+        when('is_wp_error')->alias(static fn ($value) => $value === $error);
+
+        expect('wp_remote_post')
+            ->once()
+            ->andReturn($error);
+
+        expect('set_transient')
+            ->once()
+            ->with('wp_watchdog_webhook_error', 'WP Plugin Watchdog webhook request to https://example.com/hook failed: Something went wrong', 86400);
+
+        expect('delete_transient')->never();
+
+        $notifier = new Notifier($repository);
+        $notifier->notify([
+            new Risk('plugin-slug', 'Plugin Name', '1.0.0', null, ['Example reason']),
+        ]);
+    }
+
+    public function testWebhookDispatchLogsNon2xxResponses(): void
+    {
+        $settings = [
+            'notifications' => [
+                'frequency' => 'daily',
+                'email'     => [
+                    'enabled'    => false,
+                    'recipients' => '',
+                ],
+                'discord'   => [
+                    'enabled' => false,
+                    'webhook' => '',
+                ],
+                'webhook'   => [
+                    'enabled' => true,
+                    'url'     => 'https://example.com/hook',
+                    'secret'  => '',
+                ],
+                'wpscan_api_key' => '',
+            ],
+        ];
+
+        $repository = $this->createMock(SettingsRepository::class);
+        $repository->method('get')->willReturn($settings);
+
+        when('admin_url')->alias(static fn ($path = '') => 'https://example.com/wp-admin/' . ltrim($path, '/'));
+        when('esc_url')->alias(static fn ($url) => $url);
+        when('esc_html')->alias(static fn ($text) => $text);
+        when('esc_attr')->alias(static fn ($text) => $text);
+        when('__')->alias(static fn ($text) => $text);
+        when('esc_html__')->alias(static fn ($text) => $text);
+        when('wp_json_encode')->alias(static fn ($data) => json_encode($data, JSON_THROW_ON_ERROR));
+        when('is_wp_error')->alias(static fn () => false);
+        when('wp_remote_retrieve_response_code')->alias(static fn () => 500);
+        when('wp_remote_retrieve_body')->alias(static fn () => 'Server exploded');
+
+        expect('wp_remote_post')
+            ->once()
+            ->andReturn([
+                'response' => ['code' => 500],
+                'body'     => 'Server exploded',
+            ]);
+
+        $message = 'WP Plugin Watchdog webhook request to https://example.com/hook failed with status 500: Server exploded';
+
+        expect('set_transient')
+            ->once()
+            ->with('wp_watchdog_webhook_error', $message, 86400);
+
+        expect('delete_transient')->never();
 
         $notifier = new Notifier($repository);
         $notifier->notify([

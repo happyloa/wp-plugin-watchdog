@@ -7,6 +7,11 @@
 <div class="wrap">
     <h1><?php esc_html_e('WP Plugin Watchdog', 'wp-plugin-watchdog'); ?></h1>
 
+    <?php $webhookError = get_transient('wp_watchdog_webhook_error'); ?>
+    <?php if (! empty($webhookError)) : ?>
+        <div class="notice notice-error is-dismissible"><p><?php echo esc_html($webhookError); ?></p></div>
+    <?php endif; ?>
+
     <?php if (isset($_GET['updated'])) : ?>
         <div class="notice notice-success is-dismissible"><p><?php esc_html_e('Settings saved.', 'wp-plugin-watchdog'); ?></p></div>
     <?php endif; ?>
@@ -157,6 +162,13 @@
                             <?php esc_html_e('Webhook URL', 'wp-plugin-watchdog'); ?><br />
                             <input type="url" name="settings[notifications][webhook][url]" value="<?php echo esc_attr($settings['notifications']['webhook']['url']); ?>" class="regular-text" />
                         </label>
+                    </p>
+                    <p>
+                        <label>
+                            <?php esc_html_e('Webhook secret (optional)', 'wp-plugin-watchdog'); ?><br />
+                            <input type="text" name="settings[notifications][webhook][secret]" value="<?php echo esc_attr($settings['notifications']['webhook']['secret'] ?? ''); ?>" class="regular-text" autocomplete="off" />
+                        </label>
+                        <span class="description"><?php esc_html_e('Used to sign webhook payloads with an HMAC signature.', 'wp-plugin-watchdog'); ?></span>
                     </p>
                 </td>
             </tr>
