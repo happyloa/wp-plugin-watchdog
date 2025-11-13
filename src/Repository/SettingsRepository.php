@@ -22,6 +22,7 @@ class SettingsRepository
                 'webhook'   => [
                     'enabled' => false,
                     'url'     => '',
+                    'secret'  => '',
                 ],
                 'wpscan_api_key' => '',
             ],
@@ -89,6 +90,7 @@ class SettingsRepository
                 'webhook'   => [
                     'enabled' => ! empty($webhook['enabled']),
                     'url'     => esc_url_raw($webhook['url'] ?? ''),
+                    'secret'  => sanitize_text_field($webhook['secret'] ?? ''),
                 ],
                 'wpscan_api_key' => sanitize_text_field($notifications['wpscan_api_key'] ?? ''),
             ],
@@ -140,6 +142,7 @@ class SettingsRepository
             'webhook' => [
                 'enabled' => $stored['webhook_enabled'] ?? null,
                 'url'     => $stored['webhook_url'] ?? null,
+                'secret'  => $stored['webhook_secret'] ?? null,
             ],
             'frequency'      => $stored['notification_frequency'] ?? null,
             'wpscan_api_key' => $stored['wpscan_api_key'] ?? null,
@@ -158,6 +161,7 @@ class SettingsRepository
             'webhook'   => [
                 'enabled' => $webhook['enabled'] ?? $legacy['webhook']['enabled'],
                 'url'     => $webhook['url'] ?? $legacy['webhook']['url'],
+                'secret'  => $webhook['secret'] ?? $legacy['webhook']['secret'],
             ],
             'wpscan_api_key' => $notifications['wpscan_api_key'] ?? $legacy['wpscan_api_key'],
         ];
