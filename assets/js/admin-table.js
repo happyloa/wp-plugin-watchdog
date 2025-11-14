@@ -13,7 +13,7 @@
         }
 
         const perPage = parseInt(tableWrapper.dataset.perPage || '10', 10);
-        const rows = Array.from(tbody.querySelectorAll('tr'));
+        let rows = Array.from(tbody.querySelectorAll('tr'));
         const pagination = tableWrapper.querySelector('[data-pagination]');
         const statusEl = tableWrapper.querySelector('[data-page-status]');
         const prevBtn = pagination ? pagination.querySelector('[data-action="prev"]') : null;
@@ -104,6 +104,8 @@
 
                 return aValue < bValue ? 1 : -1;
             });
+
+            rows = sortedRows;
 
             sortedRows.forEach((row) => tbody.appendChild(row));
         }
