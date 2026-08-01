@@ -8,6 +8,7 @@
 /** @var array<int, array<string, string>> $watchdogHistoryDownloads */
 /** @var array $watchdogCronStatus */
 /** @var string $watchdogCronEndpoint */
+/** @var string $watchdogCronSecret */
 /** @var string|null $watchdogSettingsError */
 /** @var array|null $watchdogWpScanError */
 /** @var string|false $watchdogScanError */
@@ -251,7 +252,17 @@ $watchdogFrequencyLabel = $watchdogFrequencyLabels[$watchdogCurrentFrequency]
                 <strong><?php esc_html_e('Server cron endpoint:', 'site-add-on-watchdog'); ?></strong><br />
                 <code><?php echo esc_html($watchdogCronEndpoint); ?></code>
             </p>
-            <p class="wp-watchdog-muted"><?php esc_html_e('Call this URL from a system cron or monitoring service to trigger scans or notification retries even when wp-cron is disabled.', 'site-add-on-watchdog'); ?></p>
+            <?php if ($watchdogCronSecretPersisted) : ?>
+                <p class="wp-watchdog-muted wp-watchdog-endpoint">
+                    <strong><?php esc_html_e('Generated Cron secret:', 'site-add-on-watchdog'); ?></strong><br />
+                    <code><?php echo esc_html($watchdogCronSecret); ?></code>
+                </p>
+                <p class="wp-watchdog-muted wp-watchdog-endpoint">
+                    <strong><?php esc_html_e('Authenticated command:', 'site-add-on-watchdog'); ?></strong><br />
+                    <code><?php echo esc_html(sprintf('curl -X POST -H "X-Watchdog-Cron-Key: %s" "%s"', $watchdogCronSecret, $watchdogCronEndpoint)); ?></code>
+                </p>
+                <p class="wp-watchdog-muted"><?php esc_html_e('Use POST and keep the generated secret private. The header-authenticated request can trigger scans or notification retries even when wp-cron is disabled.', 'site-add-on-watchdog'); ?></p>
+            <?php endif; ?>
             <div class="wp-watchdog-divider"></div>
             <div>
                 <p class="wp-watchdog-muted wp-watchdog-subheading"><strong><?php esc_html_e('Queue status', 'site-add-on-watchdog'); ?></strong></p>

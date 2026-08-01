@@ -79,6 +79,7 @@ class AdminPage
         $watchdogSettings  = $this->settingsRepository->get();
         $watchdogCronStatus = $this->plugin->getCronStatus();
         $watchdogCronEndpoint = $this->plugin->getCronEndpointUrl();
+        $watchdogCronSecret = $this->plugin->getCronSecret();
         $watchdogCronSecretPersisted = $this->settingsRepository->hasPersistedCronSecret();
 
         $watchdogRiskSortParam = filter_input(INPUT_GET, 'risk_sort', FILTER_SANITIZE_FULL_SPECIAL_CHARS);

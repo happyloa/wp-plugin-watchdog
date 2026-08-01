@@ -272,7 +272,7 @@ class Plugin
     public function registerRestRoutes(): void
     {
         register_rest_route(self::REST_NAMESPACE, '/cron', [
-            'methods'             => ['GET', 'POST'],
+            'methods'             => ['POST'],
             'callback'            => [$this, 'handleRestCronRequest'],
             'permission_callback' => [$this, 'authorizeCronRequest'],
             'args'                => [
@@ -396,9 +396,7 @@ class Plugin
 
     public function getCronEndpointUrl(): string
     {
-        $base = rest_url(self::REST_NAMESPACE . '/cron');
-
-        return add_query_arg('key', rawurlencode($this->getCronSecret()), $base);
+        return rest_url(self::REST_NAMESPACE . '/cron');
     }
 
     private function isEventOverdue(int $timestamp, int $interval): bool
@@ -421,9 +419,8 @@ class Plugin
             } else {
                 $cronUrl = site_url('wp-cron.php');
                 wp_remote_post($cronUrl, [
-                    'timeout'   => 0.01,
-                    'blocking'  => false,
-                    'sslverify' => false,
+                    'timeout'  => 0.01,
+                    'blocking' => false,
                 ]);
             }
         }
@@ -691,8 +688,8 @@ class Plugin
 
     public function validateCronRequest(WP_REST_Request $request): bool
     {
-        $provided = (string) ($request->get_param('key') ?? '');
-        $stored   = $this->getCronSecret();
+        [$provided] = $this->cronCredentialFromRequest($request);
+        $stored     = $this->getCronSecret();
 
         if ($stored === '') {
             return false;
@@ -703,8 +700,16 @@ class Plugin
 
     public function authorizeCronRequest(WP_REST_Request $request): bool|\WP_Error
     {
-        if ($this->validateCronRequest($request)) {
-            return true;
+        $queryParams = $request->get_query_params();
+        $methodWasOverridden = array_key_exists('_method', $queryParams)
+            || trim((string) $request->get_header('X-HTTP-Method-Override')) !== '';
+
+        if (strtoupper($request->get_method()) !== 'POST' || $methodWasOverridden) {
+            return new \WP_Error(
+                'watchdog_cron_method_not_allowed',
+                __('The cron endpoint only accepts POST requests.', 'site-add-on-watchdog'),
+                ['status' => 405]
+            );
         }
 
         $stored = $this->getCronSecret();
@@ -716,11 +721,56 @@ class Plugin
             );
         }
 
-        return new \WP_Error(
-            'watchdog_cron_secret_invalid',
-            __('Invalid cron secret.', 'site-add-on-watchdog'),
-            ['status' => 403]
-        );
+        [$provided, $transport] = $this->cronCredentialFromRequest($request);
+        if ($provided === '' || ! hash_equals($stored, $provided)) {
+            return new \WP_Error(
+                'watchdog_cron_secret_invalid',
+                __('Invalid cron secret.', 'site-add-on-watchdog'),
+                ['status' => 403]
+            );
+        }
+
+        if ($transport === 'query' && (bool) $request->get_param('force')) {
+            return new \WP_Error(
+                'watchdog_cron_force_requires_header',
+                __('Force requests require header authentication.', 'site-add-on-watchdog'),
+                ['status' => 403]
+            );
+        }
+
+        return true;
+    }
+
+    /**
+     * Prefer credentials that are not exposed in access logs. The query
+     * parameter remains temporarily supported for existing POST integrations.
+     *
+     * @return array{0: string, 1: 'header'|'query'|'none'}
+     */
+    private function cronCredentialFromRequest(WP_REST_Request $request): array
+    {
+        $header = trim((string) $request->get_header('X-Watchdog-Cron-Key'));
+        if ($header !== '') {
+            return [$header, 'header'];
+        }
+
+        $authorization = trim((string) $request->get_header('Authorization'));
+        if (preg_match('/^Bearer\s+(\S+)$/i', $authorization, $matches) === 1) {
+            return [$matches[1], 'header'];
+        }
+
+        $query = $request->get_query_params();
+        $key   = $query['key'] ?? '';
+        if (! is_string($key) && ! is_numeric($key)) {
+            return ['', 'none'];
+        }
+
+        $key = (string) $key;
+        if ($key !== '') {
+            return [$key, 'query'];
+        }
+
+        return ['', 'none'];
     }
 
     /**

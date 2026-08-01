@@ -12,13 +12,60 @@ use Watchdog\Scanner;
 if (! class_exists('WP_REST_Request')) {
     class WP_REST_Request
     {
-        public function __construct(private array $params = [])
-        {
+        public function __construct(
+            private array $params = [],
+            private array $headers = [],
+            private array $queryParams = [],
+            private string $method = 'POST'
+        ) {
         }
 
         public function get_param(string $key): mixed
         {
             return $this->params[$key] ?? null;
+        }
+
+        public function get_header(string $key): mixed
+        {
+            foreach ($this->headers as $name => $value) {
+                if (strtolower((string) $name) === strtolower($key)) {
+                    return $value;
+                }
+            }
+
+            return null;
+        }
+
+        public function get_query_params(): array
+        {
+            return $this->queryParams;
+        }
+
+        public function get_method(): string
+        {
+            return $this->method;
+        }
+    }
+}
+
+if (! class_exists('WP_Error')) {
+    class WP_Error
+    {
+        public function __construct(
+            private string $code = '',
+            private string $message = '',
+            private mixed $data = null
+        ) {
+        }
+
+        public function get_error_code(): string
+        {
+            return $this->code;
+        }
+
+        public function get_error_data(): mixed
+        {
+            return $this->data;
         }
     }
 }
@@ -32,10 +79,51 @@ class PluginTest extends TestCase
         when('delete_transient')->justReturn(true);
     }
 
+    public function testCronRouteOnlyAcceptsPostRequests(): void
+    {
+        expect('register_rest_route')
+            ->once()
+            ->withArgs(static function (string $namespace, string $route, array $args): bool {
+                self::assertSame('site-add-on-watchdog/v1', $namespace);
+                self::assertSame('/cron', $route);
+                self::assertSame(['POST'], $args['methods']);
+
+                return true;
+            });
+
+        $plugin = $this->createPluginWithCronSecret('secret123');
+        $plugin->registerRestRoutes();
+    }
+
+    public function testCronEndpointUrlDoesNotExposeSecret(): void
+    {
+        expect('rest_url')
+            ->once()
+            ->with('site-add-on-watchdog/v1/cron')
+            ->andReturn('https://example.test/wp-json/site-add-on-watchdog/v1/cron');
+
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        self::assertSame(
+            'https://example.test/wp-json/site-add-on-watchdog/v1/cron',
+            $plugin->getCronEndpointUrl()
+        );
+    }
+
     public function testScheduleTriggersOverdueCatchUpForTesting(): void
     {
         when('site_url')->justReturn('https://example.test');
-        when('wp_remote_post')->justReturn(null);
+        expect('wp_remote_post')
+            ->once()
+            ->withArgs(static function (string $url, array $args): bool {
+                self::assertSame('https://example.test', $url);
+                self::assertSame(0.01, $args['timeout']);
+                self::assertFalse($args['blocking']);
+                self::assertArrayNotHasKey('sslverify', $args);
+
+                return true;
+            })
+            ->andReturn(null);
         when('get_option')->alias(static function (string $name) {
             return match ($name) {
                 'siteadwa_cron_status' => [
@@ -360,34 +448,121 @@ class PluginTest extends TestCase
 
     public function testValidateCronRequestRejectsEmptySecret(): void
     {
-        $scanner = $this->createMock(Scanner::class);
-        $riskRepository = $this->createMock(RiskRepository::class);
-        $settingsRepository = $this->createMock(SettingsRepository::class);
-        $settingsRepository->method('get')->willReturn([
-            'notifications' => ['cron_secret' => ''],
-        ]);
-        $notifier = $this->createMock(Notifier::class);
+        $plugin = $this->createPluginWithCronSecret('');
 
-        $plugin = new Plugin($scanner, $riskRepository, $settingsRepository, $notifier);
-
-        $request = new WP_REST_Request(['key' => 'anything']);
+        $request = new WP_REST_Request([], [], ['key' => 'anything']);
         self::assertFalse($plugin->validateCronRequest($request));
     }
 
-    public function testValidateCronRequestAllowsMatchingSecret(): void
+    public function testValidateCronRequestAllowsMatchingHeaderSecret(): void
     {
-        $scanner = $this->createMock(Scanner::class);
-        $riskRepository = $this->createMock(RiskRepository::class);
-        $settingsRepository = $this->createMock(SettingsRepository::class);
-        $settingsRepository->method('get')->willReturn([
-            'notifications' => ['cron_secret' => 'secret123'],
-        ]);
-        $notifier = $this->createMock(Notifier::class);
+        $plugin = $this->createPluginWithCronSecret('secret123');
 
-        $plugin = new Plugin($scanner, $riskRepository, $settingsRepository, $notifier);
-
-        $request = new WP_REST_Request(['key' => 'secret123']);
+        $request = new WP_REST_Request([], ['x-watchdog-cron-key' => 'secret123']);
         self::assertTrue($plugin->validateCronRequest($request));
+    }
+
+    public function testValidateCronRequestAllowsMatchingBearerSecret(): void
+    {
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request([], ['authorization' => 'Bearer secret123']);
+        self::assertTrue($plugin->validateCronRequest($request));
+    }
+
+    public function testValidateCronRequestTemporarilyAllowsMatchingQuerySecret(): void
+    {
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request([], [], ['key' => 'secret123']);
+        self::assertTrue($plugin->validateCronRequest($request));
+    }
+
+    public function testValidateCronRequestDoesNotFallBackFromInvalidHeaderToQuerySecret(): void
+    {
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request(
+            [],
+            ['X-Watchdog-Cron-Key' => 'wrong-secret'],
+            ['key' => 'secret123']
+        );
+
+        self::assertFalse($plugin->validateCronRequest($request));
+    }
+
+    public function testAuthorizeCronRequestRejectsGetRequests(): void
+    {
+        when('__')->alias(static fn (string $message): string => $message);
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request([], ['X-Watchdog-Cron-Key' => 'secret123'], [], 'GET');
+        $result  = $plugin->authorizeCronRequest($request);
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame('watchdog_cron_method_not_allowed', $result->get_error_code());
+        self::assertSame(['status' => 405], $result->get_error_data());
+    }
+
+    public function testAuthorizeCronRequestRejectsQueryMethodOverride(): void
+    {
+        when('__')->alias(static fn (string $message): string => $message);
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request(
+            [],
+            ['X-Watchdog-Cron-Key' => 'secret123'],
+            ['_method' => 'POST'],
+            'POST'
+        );
+        $result = $plugin->authorizeCronRequest($request);
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame('watchdog_cron_method_not_allowed', $result->get_error_code());
+        self::assertSame(['status' => 405], $result->get_error_data());
+    }
+
+    public function testAuthorizeCronRequestRejectsHeaderMethodOverride(): void
+    {
+        when('__')->alias(static fn (string $message): string => $message);
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request(
+            [],
+            [
+                'X-Watchdog-Cron-Key' => 'secret123',
+                'X-HTTP-Method-Override' => 'POST',
+            ],
+            [],
+            'POST'
+        );
+        $result = $plugin->authorizeCronRequest($request);
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame('watchdog_cron_method_not_allowed', $result->get_error_code());
+        self::assertSame(['status' => 405], $result->get_error_data());
+    }
+
+    public function testAuthorizeCronRequestRejectsForceWithLegacyQuerySecret(): void
+    {
+        when('__')->alias(static fn (string $message): string => $message);
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request(['force' => true], [], ['key' => 'secret123']);
+        $result  = $plugin->authorizeCronRequest($request);
+
+        self::assertInstanceOf(WP_Error::class, $result);
+        self::assertSame('watchdog_cron_force_requires_header', $result->get_error_code());
+        self::assertSame(['status' => 403], $result->get_error_data());
+    }
+
+    public function testAuthorizeCronRequestAllowsForceWithHeaderSecret(): void
+    {
+        $plugin = $this->createPluginWithCronSecret('secret123');
+
+        $request = new WP_REST_Request(['force' => true], ['X-Watchdog-Cron-Key' => 'secret123']);
+
+        self::assertTrue($plugin->authorizeCronRequest($request));
     }
 
     public function testScanFailurePreservesSavedResultsAndReturnsSafely(): void
@@ -412,5 +587,18 @@ class PluginTest extends TestCase
         $plugin = new Plugin($scanner, $riskRepository, $settingsRepository, $notifier);
 
         self::assertFalse($plugin->runScan());
+    }
+
+    private function createPluginWithCronSecret(string $secret): Plugin
+    {
+        $scanner            = $this->createMock(Scanner::class);
+        $riskRepository     = $this->createMock(RiskRepository::class);
+        $settingsRepository = $this->createMock(SettingsRepository::class);
+        $settingsRepository->method('get')->willReturn([
+            'notifications' => ['cron_secret' => $secret],
+        ]);
+        $notifier = $this->createMock(Notifier::class);
+
+        return new Plugin($scanner, $riskRepository, $settingsRepository, $notifier);
     }
 }
