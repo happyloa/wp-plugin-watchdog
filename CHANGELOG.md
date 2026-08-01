@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-08-02
+
+### Changed
+
+- Filter WPScan vulnerability records against each installed plugin version and isolate caches by version.
+- Require a genuine `POST` for the external Cron REST endpoint, reject method overrides, and accept the generated secret through the `X-Watchdog-Cron-Key` header or a Bearer token.
+- Keep legacy query-key authentication available for existing `POST` jobs while no longer placing secrets in newly generated endpoint URLs.
+- Clarify the WordPress.org plugin-slug lookups that are required for public version and changelog comparisons.
+
+### Fixed
+
+- Stop reporting WPScan vulnerabilities whose `fixed_in` version is already installed.
+- Honor the WPScan rate-limit and temporary-server-error cooldown before sending additional API requests.
+- Replace the non-working external Cron example with an authenticated request.
+- Remove the hard-coded TLS verification override from the local Cron fallback.
+- Add regression coverage for vulnerability filtering, API cooldowns, and Cron authentication.
+- Refresh development-only PHPUnit and WordPress Coding Standards dependencies to patched releases.
+
 ## [1.8.0] - 2026-07-18
 
 ### Changed

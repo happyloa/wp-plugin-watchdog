@@ -1,6 +1,6 @@
 # Site Add-on Watchdog architecture
 
-Version 1.8.0 keeps the WordPress entry file deliberately small and puts each responsibility behind a focused class.
+Version 1.8.1 keeps the WordPress entry file deliberately small and puts each responsibility behind a focused class.
 
 ```text
 site-add-on-watchdog.php
@@ -45,6 +45,6 @@ site-add-on-watchdog.php
 ## Quality gates
 
 - `composer test` runs the PHPUnit suite.
-- `composer lint` runs WordPress Coding Standards.
+- `composer lint` runs the repository's PSR-12 PHPCS ruleset; the official Plugin Check action supplies WordPress-specific review checks.
 - GitHub Actions tests PHP 8.1 through 8.5 and runs the official WordPress Plugin Check action.
 - `scripts/build-release.ps1` creates the installable ZIP from an explicit allowlist, keeping tests, build tooling, repository artwork, and WordPress.org directory assets outside the plugin package.

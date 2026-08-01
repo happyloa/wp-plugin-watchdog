@@ -4,11 +4,11 @@ Tags: security, plugins, monitoring, notifications
 Requires at least: 6.0
 Tested up to: 7.0
 Requires PHP: 8.1
-Stable tag: 1.8.0
+Stable tag: 1.8.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Monitor installed plugins for security notices, outdated releases, and WPScan disclosures without leaking your site's plugin inventory.
+Monitor installed plugins for security notices, outdated releases, and optional version-aware WPScan disclosures.
 
 == Description ==
 
@@ -18,13 +18,22 @@ Site Add-on Watchdog keeps an eye on your site's plugins and warns you when:
 * The official changelog mentions security or vulnerability fixes.
 * (Optional) WPScan lists open CVEs for the plugin when you provide your own API key.
 
-The plugin runs on a schedule you control—choose daily, weekly, a twenty-minute testing cadence, or rely on manual scans—and stores results locally. Nothing leaves your site unless you explicitly configure outgoing notifications.
+The plugin runs on a schedule you control—choose daily, weekly, a twenty-minute testing cadence, or rely on manual scans—and stores results locally. To compare public versions and changelogs, Watchdog sends one plugin slug at a time to WordPress.org and caches the response. WPScan lookups and outgoing notifications remain opt-in.
 
 === Privacy first ===
 
-* No plugin inventory or telemetry is ever sent off-site by default.
-* Optional webhooks are opt-in and only post the detected risks.
-* WPScan lookups only run when you add your personal API token.
+* Risk processing and storage stay on your site; Watchdog does not send telemetry, site content, or user data.
+* WordPress.org receives one request for each installed plugin slug so Watchdog can retrieve public version and changelog data.
+* WPScan receives one plugin-slug lookup at a time only when you add your personal API token.
+* Notification channels are opt-in and send the detected plugin risks to the destinations you configure.
+
+=== External services ===
+
+Watchdog uses the following external services under the stated conditions:
+
+* **WordPress.org Plugin API (required for directory comparisons):** During a scan, Watchdog sends each installed plugin slug separately to retrieve its public version and changelog. No site content or user data is included. See the [WordPress.org service](https://api.wordpress.org/) and [privacy policy](https://wordpress.org/about/privacy/).
+* **WPScan API (optional):** When you save a WPScan API token, Watchdog sends that token as authorization and submits one plugin slug at a time to retrieve vulnerability records. See [WPScan](https://wpscan.com/), its [terms](https://wpscan.com/terms/), and the applicable [Automattic privacy policy](https://automattic.com/privacy/).
+* **Notification destinations (optional):** When you enable Email, Discord, Slack, Microsoft Teams, or a custom webhook, Watchdog sends the alert to the address you configure. Alerts can include plugin names, installed and available versions, risk or vulnerability details, and links back to your WordPress administration area. Those transmissions are governed by your mail provider or destination service; review the applicable policies for [Discord](https://discord.com/terms) ([privacy](https://discord.com/privacy)), [Slack](https://slack.com/terms-of-service) ([privacy](https://slack.com/trust/privacy/privacy-policy)), or [Microsoft](https://www.microsoft.com/servicesagreement) ([privacy](https://privacy.microsoft.com/privacystatement)).
 
 === Admin tools ===
 
@@ -51,7 +60,7 @@ The plugin runs on a schedule you control—choose daily, weekly, a twenty-minut
 
 = Does this plugin share my list of installed plugins? =
 
-No. All scanning happens locally. Data only leaves your site if you enable a webhook or Discord notification yourself.
+Risk processing and storage happen locally, but version comparison requires Watchdog to query WordPress.org once for each installed plugin slug. If you add a WPScan API token, each plugin slug is also queried against WPScan. Watchdog does not send site content, user data, or telemetry. Notification channels only send detected plugin risks when you explicitly configure and enable them.
 
 = How do I get a WPScan API key? =
 
@@ -77,9 +86,9 @@ Tests and the `phpunit.xml.dist` configuration are available in the public repos
 
 === Scheduled scans are not running ===
 
-Watchdog relies on WP-Cron to trigger scheduled scans and notifications. If you have set `DISABLE_WP_CRON` to `true` or your site receives very little traffic (so WP-Cron rarely runs), configure a system cron job to call either `wp-cron.php` or the plugin's REST endpoint. The admin **Delivery health** panel lists the REST URL you can target; a typical example looks like this:
+Watchdog relies on WP-Cron to trigger scheduled scans and notifications. If you have set `DISABLE_WP_CRON` to `true` or your site receives very little traffic (so WP-Cron rarely runs), configure a system cron job to call either `wp-cron.php` or the plugin's REST endpoint. The admin **Delivery health** panel shows the endpoint and generated secret. Send the secret in an HTTP header so it does not appear in access logs; a typical example looks like this:
 
-`curl -X POST https://example.com/wp-json/site-add-on-watchdog/v1/cron`
+`curl -X POST -H "X-Watchdog-Cron-Key: YOUR_GENERATED_SECRET" https://example.com/wp-json/site-add-on-watchdog/v1/cron`
 
 Testing-mode notifications also rely on this trigger, so be sure your cron job is running when validating delivery.
 
@@ -104,6 +113,13 @@ The development repository is available on GitHub: https://github.com/happyloa/s
 
 == Changelog ==
 
+= 1.8.1 =
+* Filter WPScan disclosures against the installed plugin version so resolved vulnerabilities are not reported as active.
+* Pause additional WPScan requests after rate-limit or temporary server responses.
+* Require a genuine POST for the external Cron endpoint, reject method overrides, and support secret delivery through an HTTP header while retaining legacy query-key compatibility.
+* Correct external Cron and privacy documentation, and harden the local Cron fallback.
+* Add regression coverage for version-aware vulnerability filtering, API cooldowns, and Cron authentication.
+
 = 1.8.0 =
 * Refresh the admin dashboard with overview cards, section navigation, responsive settings, and clearer delivery controls.
 * Isolate plugin bootstrapping, message formatting, risk sorting, and scan orchestration into focused services.
@@ -116,3 +132,8 @@ The development repository is available on GitHub: https://github.com/happyloa/s
 * Declare compatibility with WordPress 7.0 and require PHP 8.1 or newer.
 
 For earlier releases, see the full [GitHub changelog](https://github.com/happyloa/site-add-on-watchdog/blob/main/CHANGELOG.md).
+
+== Upgrade Notice ==
+
+= 1.8.1 =
+External Cron calls must now use POST. Update existing GET jobs before upgrading; legacy `?key=` authentication remains temporarily available only for POST requests, while new jobs should use the `X-Watchdog-Cron-Key` header.
