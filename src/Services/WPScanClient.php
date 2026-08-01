@@ -18,18 +18,28 @@ class WPScanClient
         return ! empty($this->apiKey);
     }
 
-    public function fetchVulnerabilities(string $pluginSlug): array
+    public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
     {
         if (! $this->isEnabled()) {
             return [];
         }
 
-        $cacheKey = $this->getCacheKey($pluginSlug);
+        $pluginVersion = $this->normalizeVersion($pluginVersion);
+        if ($pluginVersion === '') {
+            return [];
+        }
+
+        $cacheKey = $this->getCacheKey($pluginSlug, $pluginVersion);
         $cached = get_transient($cacheKey);
         if (is_array($cached)) {
             return $cached;
         }
 
+        if ($this->isInCooldown()) {
+            return [];
+        }
+
+        // The version-filtered endpoint is Enterprise-only, so filter the public response locally.
         $response = wp_remote_get(
             sprintf('https://wpscan.com/api/v3/plugins/%s', rawurlencode($pluginSlug)),
             [
@@ -52,28 +62,20 @@ class WPScanClient
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        if (
-            ! is_array($body)
-            || ! isset($body['vulnerabilities'])
-            || ! is_array($body['vulnerabilities'])
-            || $body['vulnerabilities'] === []
-        ) {
+        $rawVulnerabilities = $this->extractVulnerabilities($body, $pluginSlug);
+        if ($rawVulnerabilities === []) {
             delete_transient($this->getErrorKey());
             set_transient($cacheKey, [], $this->getCacheTtl());
             return [];
         }
 
-        $rawVulnerabilities = array_values(array_filter($body['vulnerabilities'], 'is_array'));
+        $activeVulnerabilities = array_values(array_filter(
+            $rawVulnerabilities,
+            fn (array $vulnerability): bool => $this->affectsVersion($vulnerability, $pluginVersion)
+        ));
         $vulnerabilities = array_map(
-            static fn (array $vulnerability): array => [
-                'title'       => $vulnerability['title'] ?? '',
-                'references'  => $vulnerability['references'] ?? [],
-                'fixed_in'    => $vulnerability['fixed_in'] ?? null,
-                'cve'         => $vulnerability['cve'] ?? null,
-                'cvss_score'  => $vulnerability['cvss_score'] ?? null,
-                'discovered'  => $vulnerability['discovered_date'] ?? null,
-            ],
-            $rawVulnerabilities
+            fn (array $vulnerability): array => $this->normalizeVulnerability($vulnerability),
+            $activeVulnerabilities
         );
 
         delete_transient($this->getErrorKey());
@@ -82,14 +84,140 @@ class WPScanClient
         return $vulnerabilities;
     }
 
-    private function getCacheKey(string $pluginSlug): string
+    private function getCacheKey(string $pluginSlug, string $pluginVersion): string
     {
-        return sprintf('%s_wpscan_%s', Version::PREFIX, sanitize_key($pluginSlug));
+        return sprintf(
+            '%s_wpscan_%s',
+            Version::PREFIX,
+            hash('sha256', sanitize_key($pluginSlug) . "\0" . $pluginVersion)
+        );
     }
 
     private function getErrorKey(): string
     {
         return Version::PREFIX . '_wpscan_error';
+    }
+
+    private function isInCooldown(): bool
+    {
+        $error = get_transient($this->getErrorKey());
+        if (! is_array($error) || ! isset($error['code']) || ! is_numeric($error['code'])) {
+            return false;
+        }
+
+        $code = (int) $error['code'];
+
+        return $code === 429 || $code >= 500;
+    }
+
+    /**
+     * @param mixed $body
+     * @return array<int, array<string, mixed>>
+     */
+    private function extractVulnerabilities(mixed $body, string $pluginSlug): array
+    {
+        if (! is_array($body)) {
+            return [];
+        }
+
+        $pluginData = $body;
+        if (isset($body[$pluginSlug]) && is_array($body[$pluginSlug])) {
+            $pluginData = $body[$pluginSlug];
+        }
+
+        if (! isset($pluginData['vulnerabilities']) || ! is_array($pluginData['vulnerabilities'])) {
+            return [];
+        }
+
+        return array_values(array_filter($pluginData['vulnerabilities'], 'is_array'));
+    }
+
+    /**
+     * @param array<string, mixed> $vulnerability
+     */
+    private function affectsVersion(array $vulnerability, string $pluginVersion): bool
+    {
+        $fixedIn = $vulnerability['fixed_in'] ?? null;
+        if ($fixedIn === null || $fixedIn === '') {
+            return true;
+        }
+        if (! is_scalar($fixedIn)) {
+            return true;
+        }
+
+        $installedVersion = $this->normalizeVersion($pluginVersion);
+        $fixedVersion = $this->normalizeVersion((string) $fixedIn);
+        if ($installedVersion === '' || $fixedVersion === '') {
+            return true;
+        }
+
+        return version_compare($installedVersion, $fixedVersion, '<');
+    }
+
+    private function normalizeVersion(string $version): string
+    {
+        return preg_replace('/^v(?=\d)/i', '', trim($version)) ?? '';
+    }
+
+    /**
+     * @param array<string, mixed> $vulnerability
+     * @return array<string, mixed>
+     */
+    private function normalizeVulnerability(array $vulnerability): array
+    {
+        $title = isset($vulnerability['title']) && is_scalar($vulnerability['title'])
+            ? (string) $vulnerability['title']
+            : '';
+        $references = isset($vulnerability['references']) && is_array($vulnerability['references'])
+            ? $vulnerability['references']
+            : [];
+        $cve = $vulnerability['cve'] ?? null;
+        if (is_array($cve)) {
+            $cve = reset($cve);
+        }
+        if (($cve === null || $cve === '') && isset($references['cve'])) {
+            $referenceCve = is_array($references['cve'])
+                ? reset($references['cve'])
+                : $references['cve'];
+            if (is_scalar($referenceCve)) {
+                $cve = (string) $referenceCve;
+            }
+        }
+        if (! is_scalar($cve)) {
+            $cve = null;
+        }
+
+        $cvssScore = $vulnerability['cvss_score'] ?? null;
+        if (
+            $cvssScore === null
+            && isset($vulnerability['cvss'])
+            && is_array($vulnerability['cvss'])
+        ) {
+            $cvssScore = $vulnerability['cvss']['score'] ?? null;
+        }
+        if (! is_scalar($cvssScore)) {
+            $cvssScore = null;
+        }
+
+        $fixedIn = $vulnerability['fixed_in'] ?? null;
+        if (! is_scalar($fixedIn)) {
+            $fixedIn = null;
+        }
+        $discovered = $vulnerability['discovered_date']
+            ?? $vulnerability['published_date']
+            ?? null;
+        if (! is_scalar($discovered)) {
+            $discovered = null;
+        }
+
+        return [
+            'title'       => $title,
+            'references'  => $references,
+            'fixed_in'    => $fixedIn,
+            'cve'         => $cve === null ? null : (string) $cve,
+            'cvss_score'  => $cvssScore,
+            'discovered'  => $discovered,
+        ];
     }
 
     private function getCacheTtl(): int

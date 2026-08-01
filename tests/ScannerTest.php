@@ -41,12 +41,17 @@ class ScannerTest extends TestCase
 
         $repository = new RiskRepository();
         $wpscanClient = new class extends WPScanClient {
+            /** @var array<int, array{0:string, 1:string}> */
+            public array $requests = [];
+
             public function __construct()
             {
             }
 
-            public function fetchVulnerabilities(string $pluginSlug): array
+            public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
             {
+                $this->requests[] = [$pluginSlug, $pluginVersion];
+
                 return [];
             }
         };
@@ -59,6 +64,7 @@ class ScannerTest extends TestCase
         $this->assertContains('An update is available in the plugin directory.', $risks[0]->reasons);
         $this->assertContains('An update is available in the plugin directory.', $risks[0]->toArray()['reasons']);
         $this->assertContains('Changelog mentions security-related updates.', $risks[0]->reasons);
+        $this->assertSame([['sample', '1.0.0']], $wpscanClient->requests);
     }
 
     public function testIgnoresSecurityMentionsFromOlderChangelogEntries(): void
@@ -89,7 +95,7 @@ class ScannerTest extends TestCase
             {
             }
 
-            public function fetchVulnerabilities(string $pluginSlug): array
+            public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
             {
                 return [];
             }
@@ -132,7 +138,7 @@ class ScannerTest extends TestCase
             {
             }
 
-            public function fetchVulnerabilities(string $pluginSlug): array
+            public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
             {
                 return [];
             }
@@ -172,7 +178,7 @@ class ScannerTest extends TestCase
             {
             }
 
-            public function fetchVulnerabilities(string $pluginSlug): array
+            public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
             {
                 return [
                     [
@@ -218,7 +224,7 @@ class ScannerTest extends TestCase
             {
             }
 
-            public function fetchVulnerabilities(string $pluginSlug): array
+            public function fetchVulnerabilities(string $pluginSlug, string $pluginVersion = ''): array
             {
                 if ($pluginSlug === 'broken') {
                     throw new RuntimeException('Malformed provider response');

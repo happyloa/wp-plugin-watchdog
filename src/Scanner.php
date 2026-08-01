@@ -106,7 +106,7 @@ class Scanner
         }
 
         $vulnerabilities = array_values(array_filter(
-            $this->wpscanClient->fetchVulnerabilities($slug),
+            $this->wpscanClient->fetchVulnerabilities($slug, $localVersion),
             'is_array'
         ));
         if ($vulnerabilities !== []) {
