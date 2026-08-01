@@ -39,29 +39,38 @@ jobs:
       - name: Run PHPUnit
         run: vendor/bin/phpunit
 
-  plugin-check:
-    name: WordPress Plugin Check
-    runs-on: ubuntu-latest
+  package:
+    name: Build release package
+    runs-on: windows-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - name: Build WordPress release ZIP
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Version 1.8.1
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-add-on-watchdog-1.8.1
+          path: dist/site-add-on-watchdog-1.8.1.zip
+          if-no-files-found: error
+
+  plugin-check:
+    name: WordPress Plugin Check
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download release package
+        uses: actions/download-artifact@v4
+        with:
+          name: site-add-on-watchdog-1.8.1
+          path: dist
+      - name: Extract release package
+        run: unzip -q dist/site-add-on-watchdog-1.8.1.zip -d dist/plugin-check
       - name: Run official WordPress checks
         uses: wordpress/plugin-check-action@v1
         with:
-          build-dir: .
+          build-dir: dist/plugin-check/site-add-on-watchdog
           strict: true
           include-experimental: false
-          exclude-directories: |
-            .github
-            artwork
-            scripts
-            tests
-            wordpress-org-assets
-          exclude-files: |
-            .distignore
-            .gitattributes
-            .gitignore
-            composer.json
-            composer.lock
-            phpcs.xml
-            phpunit.xml.dist
