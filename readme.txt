@@ -2,9 +2,9 @@
 Contributors: aaronhsieh
 Tags: security, plugins, monitoring, notifications
 Requires at least: 6.0
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 1.8.1
+Stable tag: 1.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,6 +113,12 @@ The development repository is available on GitHub: https://github.com/happyloa/s
 
 == Changelog ==
 
+= 1.8.2 =
+* Update WordPress compatibility to 7.1.
+* Match exact released versions in changelog headings, including formatted headings and heading levels 2 through 6.
+* Avoid false security alerts from similarly numbered versions, prereleases, and unrelated changelog entries.
+* Add regression coverage for changelog parsing and a packaged WordPress scan smoke test.
+
 = 1.8.1 =
 * Filter WPScan disclosures against the installed plugin version so resolved vulnerabilities are not reported as active.
 * Pause additional WPScan requests after rate-limit or temporary server responses.
@@ -134,6 +140,9 @@ The development repository is available on GitHub: https://github.com/happyloa/s
 For earlier releases, see the full [GitHub changelog](https://github.com/happyloa/site-add-on-watchdog/blob/main/CHANGELOG.md).
 
 == Upgrade Notice ==
+
+= 1.8.2 =
+Updates WordPress compatibility to 7.1 and prevents false security alerts caused by matching unrelated changelog versions.
 
 = 1.8.1 =
 External Cron calls must now use POST. Update existing GET jobs before upgrading; legacy `?key=` authentication remains temporarily available only for POST requests, while new jobs should use the `X-Watchdog-Cron-Key` header.

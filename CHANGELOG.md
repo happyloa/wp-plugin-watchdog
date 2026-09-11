@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-09-11
+
+### Changed
+
+- Update WordPress compatibility to 7.1.
+- Verify the packaged plugin with an activation and notification-free scan on WordPress 7.1 in CI.
+
+### Fixed
+
+- Match exact released versions in changelog headings instead of similarly numbered versions or prereleases.
+- Recognize heading levels 2 through 6 and inline heading markup without including unrelated entries.
+- Skip versioned changelogs that have no matching release instead of reporting an unrelated security fix.
+- Add eight regression cases for changelog version matching.
+
 ## [1.8.1] - 2026-08-02
 
 ### Changed

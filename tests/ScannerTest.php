@@ -110,6 +110,43 @@ class ScannerTest extends TestCase
         $this->assertNotContains('Changelog mentions security-related updates.', $risks[0]->reasons);
     }
 
+    /**
+     * @dataProvider changelogHeadingProvider
+     */
+    public function testMatchesOnlyTheExactReleasedChangelogVersion(string $changelog, bool $security): void
+    {
+        Functions\when('get_plugins')->justReturn([
+            'sample/sample.php' => ['Name' => 'Sample Plugin', 'Version' => '1.0.0'],
+        ]);
+        Functions\when('sanitize_title')->alias(static fn ($value) => $value);
+        Functions\when('__')->alias(static fn ($text) => $text);
+        Functions\when('get_option')->justReturn([]);
+        Functions\when('plugins_api')->justReturn((object) [
+            'version' => '1.4.0',
+            'sections' => ['changelog' => $changelog],
+        ]);
+
+        $scanner = new Scanner(new RiskRepository(), new VersionComparator(), new WPScanClient(null));
+        $risks = $scanner->scan();
+
+        self::assertCount(1, $risks);
+        self::assertSame($security, in_array('Changelog mentions security-related updates.', $risks[0]->reasons, true));
+    }
+
+    public static function changelogHeadingProvider(): array
+    {
+        return [
+            'version prefix' => ['<h4>1.4.01</h4><p>Security fix</p><h4>1.4.0</h4><p>Maintenance</p>', false],
+            'version suffix' => ['<h4>11.4.0</h4><p>Security fix</p><h4>1.4.0</h4><p>Maintenance</p>', false],
+            'prerelease' => ['<h4>1.4.0-beta</h4><p>Security fix</p><h4>1.4.0</h4><p>Maintenance</p>', false],
+            'missing release' => ['<h4>1.3.0</h4><p>Security fix</p>', false],
+            'h3 old entry' => ['<h3>1.4.0</h3><p>Maintenance</p><h3>1.3.0</h3><p>Security fix</p>', false],
+            'formatted heading' => ['<h3><strong>v1.4.0</strong> (2026-09-11)</h3><p>Security fix</p>', true],
+            'h2 heading' => ['<h2>1.4.0</h2><p>Security fix</p>', true],
+            'plain changelog' => ['Security update for the latest release.', true],
+        ];
+    }
+
     public function testIgnoresSecurityMentionsWhenLocalVersionIsLatest(): void
     {
         Functions\when('get_plugins')->justReturn([

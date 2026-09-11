@@ -294,17 +294,19 @@ class Scanner
             return '';
         }
 
-        $patternForVersion = sprintf(
-            '/<h4[^>]*>[^<]*%s[^<]*<\/h4>\s*(.*?)(?=<h4|\z)/is',
-            preg_quote($remoteVersion, '/')
-        );
+        $headingPattern = '/<h([2-6])\b[^>]*>(.*?)<\/h\1>\s*(.*?)(?=<h[2-6]\b|\z)/is';
+        if (preg_match_all($headingPattern, $changelogHtml, $entries, PREG_SET_ORDER)) {
+            $versionPattern = '/(?<![0-9A-Za-z.])v?' . preg_quote($remoteVersion, '/')
+                . '(?![0-9A-Za-z.+-])/i';
 
-        if (preg_match($patternForVersion, $changelogHtml, $match)) {
-            return $match[0];
-        }
+            foreach ($entries as $entry) {
+                $heading = $this->stripAllTags($entry[2]);
+                if (preg_match($versionPattern, $heading)) {
+                    return $entry[3];
+                }
+            }
 
-        if (preg_match('/<h4[^>]*>.*?<\/h4>\s*(.*?)(?=<h4|\z)/is', $changelogHtml, $match)) {
-            return $match[0];
+            return '';
         }
 
         return $changelogHtml;
